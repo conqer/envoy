@@ -402,6 +402,7 @@ void Filter::onPoolFailure(Tcp::ConnectionPool::PoolFailureReason reason,
                            Upstream::HostDescriptionConstSharedPtr host) {
   upstream_handle_ = nullptr;
 
+  std::cout << "TCP proxy on Pool failure" << std::endl;
   read_callbacks_->upstreamHost(host);
   getStreamInfo().onUpstreamHostSelected(host);
 

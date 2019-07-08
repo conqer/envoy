@@ -165,7 +165,7 @@ void InstanceUtil::flushMetricsToSinks(const std::list<Stats::SinkPtr>& sinks,
 }
 
 void InstanceImpl::flushStats() {
-  ENVOY_LOG(debug, "flushing stats");
+  //ENVOY_LOG(debug, "flushing stats");
   // A shutdown initiated before this callback may prevent this from being called as per
   // the semantics documented in ThreadLocal's runOnAllThreads method.
   stats_store_.mergeHistograms([this]() -> void {

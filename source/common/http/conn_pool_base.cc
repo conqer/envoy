@@ -19,6 +19,7 @@ ConnectionPool::Cancellable*
 ConnPoolImplBase::newPendingRequest(StreamDecoder& decoder, ConnectionPool::Callbacks& callbacks) {
   ENVOY_LOG(debug, "queueing request due to no available connections");
   PendingRequestPtr pending_request(new PendingRequest(*this, decoder, callbacks));
+  std::cout<< std::this_thread::get_id() << ": " << this << ": queueing request: " << pending_request.get() << " due to no available connections" << std::endl;
   pending_request->moveIntoList(std::move(pending_request), pending_requests_);
   return pending_requests_.front().get();
 }

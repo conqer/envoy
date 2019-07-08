@@ -89,12 +89,15 @@ void ConnPoolImpl::newClientStream(Http::StreamDecoder& response_decoder,
                                    ConnectionPool::Callbacks& callbacks) {
   if (!host_->cluster().resourceManager(priority_).requests().canCreate()) {
     ENVOY_LOG(debug, "max requests overflow");
+      ENVOY_LOG(info, "max requests overflow");
+      std::cout << this << ": max requests overflow" << std::endl;
     callbacks.onPoolFailure(ConnectionPool::PoolFailureReason::Overflow, absl::string_view(),
                             nullptr);
     host_->cluster().stats().upstream_rq_pending_overflow_.inc();
   } else {
     ENVOY_CONN_LOG(debug, "creating stream", *primary_client_->client_);
     primary_client_->total_streams_++;
+    std::cout << "total streams for client:  " << primary_client_.get() << " : " << primary_client_->total_streams_ << std::endl;
     host_->stats().rq_total_.inc();
     host_->stats().rq_active_.inc();
     host_->cluster().stats().upstream_rq_total_.inc();
@@ -111,8 +114,15 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
 
   // First see if we need to handle max streams rollover.
   uint64_t max_streams = host_->cluster().maxRequestsPerConnection();
+  std::cout << "max requests per connection: " << max_streams << std::endl;
   if (max_streams == 0) {
     max_streams = maxTotalStreams();
+  }
+
+  if (primary_client_)
+  {
+    std::cout << "primary_client_->total_streams_: " << primary_client_->total_streams_ << ", max_streams: " << max_streams << std::endl;
+
   }
 
   if (primary_client_ && primary_client_->total_streams_ >= max_streams) {
@@ -121,6 +131,7 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
 
   if (!primary_client_) {
     primary_client_ = std::make_unique<ActiveClient>(*this);
+    std::cout << std::this_thread::get_id() << ": " << this << ": Created new primary client: " << primary_client_.get() << std::endl;
   }
 
   // If the primary client is not connected yet, queue up the request.
@@ -134,6 +145,7 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
       return nullptr;
     }
 
+    std::cout << std::this_thread::get_id() << ": " << this << ":  queueing request" << std::endl;
     return newPendingRequest(response_decoder, callbacks);
   }
 
@@ -144,10 +156,12 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
 }
 
 void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEvent event) {
+    std::cout << this << " : Got event" << std::endl;
   if (event == Network::ConnectionEvent::RemoteClose ||
       event == Network::ConnectionEvent::LocalClose) {
     ENVOY_CONN_LOG(debug, "client disconnected", *client.client_);
 
+    std::cout << this << " : Got close event" << std::endl;
     Envoy::Upstream::reportUpstreamCxDestroy(host_, event);
     if (client.closed_with_active_rq_) {
       Envoy::Upstream::reportUpstreamCxDestroyActiveRequest(host_, event);
@@ -181,6 +195,7 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
   }
 
   if (event == Network::ConnectionEvent::Connected) {
+    std::cout << this << " : Got connected event" << std::endl;
     conn_connect_ms_->complete();
 
     client.upstream_ready_ = true;
@@ -261,7 +276,9 @@ void ConnPoolImpl::onStreamReset(ActiveClient& client, Http::StreamResetReason r
 
 void ConnPoolImpl::onUpstreamReady() {
   // Establishes new codec streams for each pending request.
+  std::cout << "Pending requests size: " << pending_requests_.size() << std::endl;
   while (!pending_requests_.empty()) {
+    std::cout << std::this_thread::get_id() << ": " << this <<  ": Processing Pending request: " << pending_requests_.back().get() << std::endl;
     newClientStream(pending_requests_.back()->decoder_, pending_requests_.back()->callbacks_);
     pending_requests_.pop_back();
   }

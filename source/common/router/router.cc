@@ -468,9 +468,11 @@ Http::FilterHeadersStatus Filter::decodeHeaders(Http::HeaderMap& headers, bool e
   // Ensure an http transport scheme is selected before continuing with decoding.
   ASSERT(headers.Scheme());
 
+  std::cout << "creting retry state" << std::endl;
   retry_state_ =
       createRetryState(route_entry_->retryPolicy(), headers, *cluster_, config_.runtime_,
                        config_.random_, callbacks_->dispatcher(), route_entry_->priority());
+  std::cout << "Retry state: " << (retry_state_?"Not Null" : "Null")  << std::endl;
   do_shadowing_ = FilterUtility::shouldShadow(route_entry_->shadowPolicy(), config_.runtime_,
                                               callbacks_->streamId());
 
@@ -795,10 +797,12 @@ void Filter::onUpstreamAbort(Http::Code code, StreamInfo::ResponseFlag response_
 
 bool Filter::maybeRetryReset(Http::StreamResetReason reset_reason,
                              UpstreamRequest& upstream_request) {
+  std::cout << "downstream_response_started_: " << downstream_response_started_ <<  "upstream_request.retried_: " << upstream_request.retried_ << std::endl;
   // We don't retry if we already started the response, don't have a retry policy defined,
   // or if we've already retried this upstream request (currently only possible if a per
   // try timeout occurred and hedge_on_per_try_timeout is enabled).
   if (downstream_response_started_ || !retry_state_ || upstream_request.retried_) {
+    std::cout << " returning fal;se" << std::endl;
     return false;
   }
 
@@ -828,9 +832,11 @@ void Filter::onUpstreamReset(Http::StreamResetReason reset_reason,
   updateOutlierDetection(Http::Code::ServiceUnavailable, upstream_request);
 
   if (maybeRetryReset(reset_reason, upstream_request)) {
+    std::cout << "maybe retry reset" << std::endl;
     return;
   }
 
+  std::cout << "maybe retry reset returned false" << std::endl;
   const bool dropped = reset_reason == Http::StreamResetReason::Overflow;
   chargeUpstreamAbort(Http::Code::ServiceUnavailable, dropped, upstream_request);
   upstream_request.removeFromList(upstream_requests_);
@@ -1159,6 +1165,7 @@ bool Filter::setupRetry() {
   // this filter which will make this a non-issue. The implementation of supporting retry in cases
   // where the request is not complete is more complicated so we will start with this for now.
   if (!downstream_end_stream_) {
+  std::cout << " returning false as downstream_end_stream_==false" << std::endl;
     return false;
   }
   pending_retries_++;
@@ -1436,6 +1443,13 @@ void Filter::UpstreamRequest::onPerTryTimeout() {
 void Filter::UpstreamRequest::onPoolFailure(Http::ConnectionPool::PoolFailureReason reason,
                                             absl::string_view transport_failure_reason,
                                             Upstream::HostDescriptionConstSharedPtr host) {
+  std::cout << "router onPoolFailure" << std::endl;
+  /*
+  (void)reason;
+  (void)transport_failure_reason;
+  (void)host;
+*/
+ 
   Http::StreamResetReason reset_reason = Http::StreamResetReason::ConnectionFailure;
   switch (reason) {
   case Http::ConnectionPool::PoolFailureReason::Overflow:

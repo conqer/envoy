@@ -194,6 +194,7 @@ RetryStatus RetryStateImpl::shouldRetry(bool would_retry, DoRetryCallback callba
   cluster_.resourceManager(priority_).retries().inc();
   cluster_.stats().upstream_rq_retry_.inc();
   enableBackoffTimer();
+  std::cout << "retty status: yes" << std::endl;
   return RetryStatus::Yes;
 }
 
@@ -283,7 +284,9 @@ bool RetryStateImpl::wouldRetryFromReset(const Http::StreamResetReason reset_rea
   // First check "never retry" conditions so we can short circuit (we never
   // retry if the reset reason is overflow).
   if (reset_reason == Http::StreamResetReason::Overflow) {
-    return false;
+    //return false;
+    std::cout << "returning true for overflow" << std::endl;
+    return true;
   }
 
   if (retry_on_ & (RetryPolicy::RETRY_ON_5XX | RetryPolicy::RETRY_ON_GATEWAY_ERROR)) {
