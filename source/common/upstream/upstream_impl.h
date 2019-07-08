@@ -502,6 +502,13 @@ private:
   };
 };
 
+class AggregateRequestsPerConnectionPolicy : public ConnectionPolicy {
+public:
+ using Action = ConnectionPolicy::Action;
+
+ virtual Action onNewStream(const ConnectionRequestThrottlePolicySubscriber&) override;
+};
+
 /**
  * Implementation of ClusterInfo that reads from JSON.
  */
@@ -578,6 +585,8 @@ public:
 
   absl::optional<std::string> eds_service_name() const override { return eds_service_name_; }
 
+  const ConnectionPolicy& connectionPolicy() override;
+
 private:
   struct ResourceManagers {
     ResourceManagers(const envoy::api::v2::Cluster& config, Runtime::Loader& runtime,
@@ -623,6 +632,7 @@ private:
   const bool warm_hosts_;
   absl::optional<std::string> eds_service_name_;
   const absl::optional<envoy::api::v2::Cluster::CustomClusterType> cluster_type_;
+  std::unique_ptr<ConnectionPolicy> connection_policy_;
 };
 
 /**
