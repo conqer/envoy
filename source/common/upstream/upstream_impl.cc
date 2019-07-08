@@ -651,6 +651,14 @@ ClusterInfoImpl::extensionProtocolOptions(const std::string& name) const {
   return nullptr;
 }
 
+const ConnectionPolicy& ClusterInfoImpl::connectionPolicy() {
+  if (!connection_policy_) {
+    connection_policy_ = std::make_unique<AggregateRequestsPerConnectionPolicy>();
+  }
+
+  return *connection_policy_;
+}
+
 Network::TransportSocketFactoryPtr createTransportSocketFactory(
     const envoy::api::v2::Cluster& config,
     Server::Configuration::TransportSocketFactoryContext& factory_context) {
@@ -1300,6 +1308,15 @@ void reportUpstreamCxDestroyActiveRequest(const Upstream::HostDescriptionConstSh
   } else {
     host->cluster().stats().upstream_cx_destroy_local_with_active_rq_.inc();
   }
+}
+
+ConnectionPolicy::Action AggregateRequestsPerConnectionPolicy::onNewStream(
+    const ConnectionRequestThrottlePolicySubscriber& subscriber) {
+  if (subscriber.getRequestCount() > 1) {
+    return Action::OVERFLOW;
+  }
+
+  return Action::NONE;
 }
 
 } // namespace Upstream

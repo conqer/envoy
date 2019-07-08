@@ -646,6 +646,23 @@ using ProtocolOptionsConfigConstSharedPtr = std::shared_ptr<const ProtocolOption
  */
 class ClusterTypedMetadataFactory : public Envoy::Config::TypedMetadataFactory {};
 
+class ConnectionRequestThrottlePolicySubscriber {
+public:
+  virtual ~ConnectionRequestThrottlePolicySubscriber() = default;
+  virtual uint64_t getRequestCount() const PURE;
+};
+
+class ConnectionPolicy {
+public:
+  enum class Action { NONE, OVERFLOW, DRAIN };
+
+  virtual ~ConnectionPolicy() = default;
+
+  virtual Action onNewStream(const ConnectionRequestThrottlePolicySubscriber&) PURE;
+
+  //virtual Action onNewConnection(const ConnectionRequestThrottlePolicySubscriber&) PURE;
+};
+
 /**
  * Information about a given upstream cluster.
  */
@@ -842,6 +859,8 @@ public:
    * @return eds cluster service_name of the cluster.
    */
   virtual absl::optional<std::string> eds_service_name() const PURE;
+
+  virtual const ConnectionPolicy& connectionPolicy() PURE;
 
 protected:
   /**
