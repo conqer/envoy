@@ -1243,6 +1243,7 @@ ClusterManagerPtr ProdClusterManagerFactory::clusterManagerFromProto(
 Http::ConnectionPool::InstancePtr ProdClusterManagerFactory::allocateConnPool(
     Event::Dispatcher& dispatcher, HostConstSharedPtr host, ResourcePriority priority,
     Http::Protocol protocol, const Network::ConnectionSocket::OptionsSharedPtr& options) {
+  /*
   if (protocol == Http::Protocol::Http2 &&
       runtime_.snapshot().featureEnabled("upstream.use_http2", 100)) {
     return Http::ConnectionPool::InstancePtr{
@@ -1251,6 +1252,10 @@ Http::ConnectionPool::InstancePtr ProdClusterManagerFactory::allocateConnPool(
     return Http::ConnectionPool::InstancePtr{
         new Http::Http1::ProdConnPoolImpl(dispatcher, host, priority, options)};
   }
+  */
+  (void) protocol;
+    return Http::ConnectionPool::InstancePtr{
+        new Http::Http1::ProdConnPoolImpl(dispatcher, host, priority, options)};
 }
 
 Tcp::ConnectionPool::InstancePtr ProdClusterManagerFactory::allocateTcpConnPool(
