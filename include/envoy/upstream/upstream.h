@@ -647,21 +647,23 @@ typedef std::shared_ptr<const ProtocolOptionsConfig> ProtocolOptionsConfigConstS
  */
 class ClusterTypedMetadataFactory : public Envoy::Config::TypedMetadataFactory {};
 
-class ConnectionRequestThrottlePolicySubscriber {
+class ConnectionRequestPolicySubscriber {
 public:
-  virtual ~ConnectionRequestThrottlePolicySubscriber() = default;
-  virtual uint64_t getRequestCount() const PURE;
+  virtual ~ConnectionRequestPolicySubscriber() = default;
+  virtual uint64_t requestCount() const PURE;
+  virtual ResourceManager& resourceManager() const PURE;
 };
 
-class ConnectionPolicy {
+class ConnectionRequestPolicy {
 public:
-  enum class Action { NONE, OVERFLOW, DRAIN };
+  enum class State { READY, OVERFLOW, DRAIN };
 
-  virtual ~ConnectionPolicy() = default;
+  virtual ~ConnectionRequestPolicy() = default;
 
-  virtual Action onNewStream(const ConnectionRequestThrottlePolicySubscriber&) PURE;
+  virtual State onNewStream(const ConnectionRequestPolicySubscriber&) PURE;
+  virtual State onStreamReset(const ConnectionRequestPolicySubscriber&, const State&) PURE;
 
-  //virtual Action onNewConnection(const ConnectionRequestThrottlePolicySubscriber&) PURE;
+  //virtual Action onNewConnection(const ConnectionRequestPolicySubscriber&) PURE;
 };
 
 /**

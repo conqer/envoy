@@ -502,11 +502,18 @@ private:
   };
 };
 
-class AggregateRequestsPerConnectionPolicy : public ConnectionPolicy {
+class AggregateRequestsConnectionPolicy : public ConnectionRequestPolicy {
 public:
- using Action = ConnectionPolicy::Action;
+ using State = ConnectionRequestPolicy::State;
 
- virtual Action onNewStream(const ConnectionRequestThrottlePolicySubscriber&) override;
+ AggregateRequestsConnectionPolicy(ClusterInfo&);
+
+ virtual State onNewStream(const ConnectionRequestPolicySubscriber&) override;
+ virtual State onStreamReset(const ConnectionRequestPolicySubscriber&,
+                             const State&) override;
+
+ private:
+ ClusterInfo& cluster_;
 };
 
 /**

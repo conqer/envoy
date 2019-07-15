@@ -63,6 +63,10 @@ bool ConnPoolImpl::hasActiveConnections() const {
   return !pending_requests_.empty() || !busy_clients_.empty();
 }
 
+ResourceManager& ConnPoolImpl::resourceManager() const {
+  return parent_.host()->cluster().resourceManager(parent_.resourcePriority());
+}
+
 void ConnPoolImpl::attachRequestToClient(ActiveClient& client, StreamDecoder& response_decoder,
                                          ConnectionPool::Callbacks& callbacks) {
   ASSERT(!client.stream_wrapper_);

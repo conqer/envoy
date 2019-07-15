@@ -653,7 +653,7 @@ ClusterInfoImpl::extensionProtocolOptions(const std::string& name) const {
 
 const ConnectionPolicy& ClusterInfoImpl::connectionPolicy() {
   if (!connection_policy_) {
-    connection_policy_ = std::make_unique<AggregateRequestsPerConnectionPolicy>();
+    connection_policy_ = std::make_unique<AggregateRequestsPerConnectionPolicy>(*this);
   }
 
   return *connection_policy_;
@@ -1305,13 +1305,23 @@ void reportUpstreamCxDestroyActiveRequest(const Upstream::HostDescriptionConstSh
   }
 }
 
-ConnectionPolicy::Action AggregateRequestsPerConnectionPolicy::onNewStream(
-    const ConnectionRequestThrottlePolicySubscriber& subscriber) {
-  if (subscriber.getRequestCount() > 1) {
-    return Action::OVERFLOW;
+ConnectionPolicy::State AggregateRequestsConnectionPolicy::onNewStream(
+    const ConnectionRequestPolicySubscriber& subscriber) {
+  if (subscriber.requestCount() >= 1) {
+    return State::OVERFLOW;
   }
 
-  return Action::NONE;
+  return State::READY;
+}
+
+ConnectionPolicy::State AggregateRequestsConnectionPolicy::onStreamReset(
+    const ConnectionRequestPolicySubscriber& subscriber,
+    const ConnectionPolicy::State& current_state) {
+  if (subscriber.requestCount() >= 1) {
+    return State::OVERFLOW;
+  }
+
+  return State::READY;
 }
 
 } // namespace Upstream
