@@ -37,12 +37,14 @@ public:
   ConnectionPool::Cancellable* newStream(Http::StreamDecoder& response_decoder,
                                          ConnectionPool::Callbacks& callbacks) override;
   Upstream::HostDescriptionConstSharedPtr host() const override { return host_; };
+  Upstream::ResourcePriority& resourcePriority() const {return priority_};
 
 protected:
   struct ActiveClient : public Network::ConnectionCallbacks,
                         public CodecClientCallbacks,
                         public Event::DeferredDeletable,
-                        public Http::ConnectionCallbacks {
+                        public Http::ConnectionCallbacks,
+                        public Upstream::ConnectionRequestPolicySubscriber {
     ActiveClient(ConnPoolImpl& parent);
     ~ActiveClient();
 
@@ -64,6 +66,10 @@ protected:
     // Http::ConnectionCallbacks
     void onGoAway() override { parent_.onGoAway(*this); }
 
+    // Upstream::ConnectionRequestPolicySubscriber
+    uint64_t requestCount() const override { return total_streams_};
+    ResourceManager& resourceManager() const override;
+
     ConnPoolImpl& parent_;
     CodecClientPtr client_;
     Upstream::HostDescriptionConstSharedPtr real_host_description_;
@@ -72,6 +78,7 @@ protected:
     bool upstream_ready_{};
     Stats::TimespanPtr conn_length_;
     bool closed_with_active_rq_{};
+    ConnectionRequestPolicy::State state_;
   };
 
   using ActiveClientPtr = std::unique_ptr<ActiveClient>;
@@ -87,14 +94,17 @@ protected:
   void onGoAway(ActiveClient& client);
   void onStreamDestroy(ActiveClient& client);
   void onStreamReset(ActiveClient& client, Http::StreamResetReason reason);
-  void newClientStream(Http::StreamDecoder& response_decoder, ConnectionPool::Callbacks& callbacks);
-  void onUpstreamReady();
+  void attachStreamToClient(ActiveClient& client, Http::StreamDecoder& response_decoder,
+                            ConnectionPool::Callbacks& callbacks);
+  void createNewConnection();
+  void onUpstreamReady(ActiveClient& client);
 
   Stats::TimespanPtr conn_connect_ms_;
   Event::Dispatcher& dispatcher_;
   std::list<ActiveClientPtr> ready_clients_;
   std::list<ActiveClientPtr> busy_clients_;
   std::list<ActiveClientPtr> overflow_clients_;
+  std::list<ActiveClientPtr> drain_clients_;
   ActiveClientPtr primary_client_;
   ActiveClientPtr draining_client_;
   std::list<DrainedCb> drained_callbacks_;
