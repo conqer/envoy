@@ -506,14 +506,14 @@ class AggregateRequestsConnectionPolicy : public ConnectionRequestPolicy {
 public:
  using State = ConnectionRequestPolicy::State;
 
- AggregateRequestsConnectionPolicy(ClusterInfo&);
+ AggregateRequestsConnectionPolicy(const ClusterInfo&);
 
- virtual State onNewStream(const ConnectionRequestPolicySubscriber&) override;
+ virtual State onNewStream(const ConnectionRequestPolicySubscriber&) const override;
  virtual State onStreamReset(const ConnectionRequestPolicySubscriber&,
-                             const State&) override;
+                             const State&) const override;
 
  private:
- ClusterInfo& cluster_;
+ const ClusterInfo& cluster_;
 };
 
 /**
@@ -592,7 +592,7 @@ public:
 
   absl::optional<std::string> eds_service_name() const override { return eds_service_name_; }
 
-  const ConnectionPolicy& connectionPolicy() override;
+  const ConnectionRequestPolicy& connectionPolicy() const override;
 
 private:
   struct ResourceManagers {
@@ -639,7 +639,7 @@ private:
   const bool warm_hosts_;
   absl::optional<std::string> eds_service_name_;
   const absl::optional<envoy::api::v2::Cluster::CustomClusterType> cluster_type_;
-  std::unique_ptr<ConnectionPolicy> connection_policy_;
+  mutable std::unique_ptr<ConnectionRequestPolicy> connection_policy_;
 };
 
 /**
