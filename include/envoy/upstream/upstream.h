@@ -655,12 +655,12 @@ public:
 
 class ConnectionRequestPolicy {
 public:
-  enum class State { READY, OVERFLOW, DRAIN };
+  enum class State { INIT, READY, ACTIVE, OVERFLOW, DRAIN };
 
   virtual ~ConnectionRequestPolicy() = default;
 
-  virtual State onNewStream(const ConnectionRequestPolicySubscriber&) PURE;
-  virtual State onStreamReset(const ConnectionRequestPolicySubscriber&, const State&) PURE;
+  virtual State onNewStream(const ConnectionRequestPolicySubscriber&) const PURE;
+  virtual State onStreamReset(const ConnectionRequestPolicySubscriber&, const State&) const PURE;
 
   //virtual Action onNewConnection(const ConnectionRequestPolicySubscriber&) PURE;
 };
@@ -862,7 +862,7 @@ public:
    */
   virtual absl::optional<std::string> eds_service_name() const PURE;
 
-  virtual const ConnectionPolicy& connectionPolicy() PURE;
+  virtual const ConnectionRequestPolicy& connectionPolicy() const PURE;
 
 protected:
   /**

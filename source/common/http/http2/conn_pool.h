@@ -34,13 +34,16 @@ public:
   void addDrainedCallback(DrainedCb cb) override;
   void drainConnections() override;
   bool hasActiveConnections() const override;
+  /*
   ConnectionPool::Cancellable* newStream(Http::StreamDecoder& response_decoder,
                                          ConnectionPool::Callbacks& callbacks) override;
+                                         */
   Upstream::HostDescriptionConstSharedPtr host() const override { return host_; };
-  Upstream::ResourcePriority& resourcePriority() const {return priority_};
+  const Upstream::ResourcePriority& resourcePriority() const { return priority_; };
 
 protected:
-  struct ActiveClient : public Network::ConnectionCallbacks,
+  struct ActiveClient : LinkedObject<ActiveClient>,
+                        public Network::ConnectionCallbacks,
                         public CodecClientCallbacks,
                         public Event::DeferredDeletable,
                         public Http::ConnectionCallbacks,
@@ -67,8 +70,9 @@ protected:
     void onGoAway() override { parent_.onGoAway(*this); }
 
     // Upstream::ConnectionRequestPolicySubscriber
-    uint64_t requestCount() const override { return total_streams_};
-    ResourceManager& resourceManager() const override;
+    uint64_t requestCount() const override { return total_streams_;};
+    Upstream::ResourceManager& resourceManager() const override;
+
 
     ConnPoolImpl& parent_;
     CodecClientPtr client_;
@@ -78,7 +82,7 @@ protected:
     bool upstream_ready_{};
     Stats::TimespanPtr conn_length_;
     bool closed_with_active_rq_{};
-    ConnectionRequestPolicy::State state_;
+    Upstream::ConnectionRequestPolicy::State state_;
   };
 
   using ActiveClientPtr = std::unique_ptr<ActiveClient>;
@@ -88,17 +92,23 @@ protected:
 
   virtual CodecClientPtr createCodecClient(Upstream::Host::CreateConnectionData& data) PURE;
   virtual uint32_t maxTotalStreams() PURE;
+  /*
   void movePrimaryClientToDraining();
+  */
   void onConnectionEvent(ActiveClient& client, Network::ConnectionEvent event);
   void onConnectTimeout(ActiveClient& client);
   void onGoAway(ActiveClient& client);
   void onStreamDestroy(ActiveClient& client);
   void onStreamReset(ActiveClient& client, Http::StreamResetReason reason);
-  void attachStreamToClient(ActiveClient& client, Http::StreamDecoder& response_decoder,
+  void attachRequestToClient(ActiveClient& client, Http::StreamDecoder& response_decoder,
                             ConnectionPool::Callbacks& callbacks);
   void createNewConnection();
   void onUpstreamReady(ActiveClient& client);
+  ConnectionPool::Cancellable* newStream(Http::StreamDecoder& response_decoder,
+                                         ConnectionPool::Callbacks& callbacks);
 
+  void applyToEachClient(std::list<ActiveClientPtr>& client_list,
+                         const std::function<void(const ActiveClientPtr&)>& fn);
   Stats::TimespanPtr conn_connect_ms_;
   Event::Dispatcher& dispatcher_;
   std::list<ActiveClientPtr> ready_clients_;
