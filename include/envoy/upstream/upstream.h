@@ -663,7 +663,7 @@ public:
   virtual State onNewStream(const ConnectionRequestPolicySubscriber&) const PURE;
   virtual State onStreamReset(const ConnectionRequestPolicySubscriber&, const State&) const PURE;
 
-  //virtual Action onNewConnection(const ConnectionRequestPolicySubscriber&) PURE;
+  // virtual Action onNewConnection(const ConnectionRequestPolicySubscriber&) PURE;
 };
 
 /**
