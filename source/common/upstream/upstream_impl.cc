@@ -1321,8 +1321,7 @@ ConnectionRequestPolicy::State AggregateRequestsConnectionPolicy::onNewStream (
 ConnectionRequestPolicy::State AggregateRequestsConnectionPolicy::onStreamReset(
     const ConnectionRequestPolicySubscriber& subscriber,
     const ConnectionRequestPolicy::State& current_state) const {
-  // TODO (conqerAtappple): Make this config driven.
-  // Hard coding the logic for now.
+  // TODO (conqerAtappple): Make this more config+policy driven.
   switch (current_state) {
     case ConnectionRequestPolicy::State::OVERFLOW:
       if (subscriber.requestCount() < cluster_.maxRequestsPerConnection()) {
@@ -1334,6 +1333,7 @@ ConnectionRequestPolicy::State AggregateRequestsConnectionPolicy::onStreamReset(
       return current_state;
       break;
   }
+
   return current_state;
 }
 

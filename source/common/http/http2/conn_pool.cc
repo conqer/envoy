@@ -21,7 +21,10 @@ ConnPoolImpl::ConnPoolImpl(Event::Dispatcher& dispatcher, Upstream::HostConstSha
                            Upstream::ResourcePriority priority,
                            const Network::ConnectionSocket::OptionsSharedPtr& options)
     : ConnPoolImplBase(std::move(host), std::move(priority)), dispatcher_(dispatcher),
-      socket_options_(options) {}
+      socket_options_(options) {
+  ENVOY_LOG(debug, "#########################################");
+        std::cout << "CReating http2 conn pool" << std::endl;
+      }
 
 void ConnPoolImpl::applyToEachClient(std::list<ActiveClientPtr>& client_list,
                               const std::function<void(const ActiveClientPtr&)>& fn) {
@@ -73,13 +76,13 @@ void ConnPoolImpl::ConnPoolImpl::drainConnections() {
   */
 }
 
-Upstream::ResourceManager& ConnPoolImpl::ActiveClient::resourceManager() const {
-  return parent_.host()->cluster().resourceManager(parent_.resourcePriority());
-}
-
 void ConnPoolImpl::addDrainedCallback(DrainedCb cb) {
   drained_callbacks_.push_back(cb);
   checkForDrained();
+}
+
+Upstream::ResourceManager& ConnPoolImpl::ActiveClient::resourceManager() const {
+  return parent_.host()->cluster().resourceManager(parent_.resourcePriority());
 }
 
 bool ConnPoolImpl::hasActiveConnections() const {
@@ -219,6 +222,7 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
 
 void ConnPoolImpl::attachRequestToClient(ConnPoolImpl::ActiveClient& client, StreamDecoder& response_decoder,
                                          ConnectionPool::Callbacks& callbacks) {
+  ENVOY_LOG(debug, "attaching request to connection");
 	client.total_streams_++;
   host_->stats().rq_total_.inc();
   host_->stats().rq_active_.inc();
@@ -449,42 +453,68 @@ void ConnPoolImpl::onStreamDestroy(ActiveClient& client) {
   host_->stats().rq_active_.dec();
   host_->cluster().stats().upstream_rq_active_.dec();
   host_->cluster().resourceManager(priority_).requests().dec();
- 
-  // if policy.
-  //    if (client.state_ == DRAIN) {
-  //      if (client.numOfActiveRequests()  == 0) {
-  //       checkForDrained();
-  //       return;
-  //      }
-  //    }
-  //
-  //    if (client.state_ == OVERFLOW) {
-  //      if (--client.numOfActiveRequests()  <  max) {
-  //        move_to_ready();
-  //        return;
-  //      }
-  //    }
-  //
-  // if (!client.closed_with_active_rq_) {
-  //  checkForDrained();
- //  }
-  //
-  //
-  // }
-  //
-  /*
-  if (&client == draining_client_.get() && client.client_->numActiveRequests() == 0) {
-    // Close out the draining client if we no long have active requests.
-    client.client_->close();
+
+  const auto state = host_->cluster().connectionPolicy().onStreamReset(client, client.state_);
+  switch (state) {
+    case ConnectionRequestPolicy::State::ACTIVE: {
+      if (client.state_ == ConnectionRequestPolicy::State::OVERFLOW) {
+        client.moveBetweenLists(overflow_clients_, busy_clients_);
+      }
+      if (client.state_ == ConnectionRequestPolicy::State::DRAIN) {
+        client.moveBetweenLists(drain_clients_, busy_clients_);
+      }
+
+      break;
+    }
+    case ConnectionRequestPolicy::State::DRAIN: {
+      if (client.state_ == ConnectionRequestPolicy::State::OVERFLOW) {
+        client.moveBetweenLists(overflow_clients_, drain_clients_);
+      }
+
+      break;
+    }
+    default:
+      ASSERT(false);
+      break;
   }
 
-  // If we are destroying this stream because of a disconnect, do not check for drain here. We will
-  // wait until the connection has been fully drained of streams and then check in the connection
-  // event callback.
-  if (!client.closed_with_active_rq_) {
-    checkForDrained();
-  }
-  */
+      // if policy.
+      //    if (client.state_ == DRAIN) {
+      //      if (client.numOfActiveRequests()  == 0) {
+      //       checkForDrained();
+      //       return;
+      //      }
+      //    }
+      //
+      //    if (client.state_ == OVERFLOW) {
+      //      if (--client.numOfActiveRequests()  <  max) {
+      //        move_to_ready();
+      //        return;
+      //      }
+      //    }
+      //
+      // if (!client.closed_with_active_rq_) {
+      //  checkForDrained();
+      //  }
+      //
+      //
+      // }
+      //
+      /*
+      if (&client == draining_client_.get() && client.client_->numActiveRequests() == 0) {
+        // Close out the draining client if we no long have active requests.
+        client.client_->close();
+      }
+
+      // If we are destroying this stream because of a disconnect, do not check for drain here. We
+      will
+      // wait until the connection has been fully drained of streams and then check in the
+      connection
+      // event callback.
+      if (!client.closed_with_active_rq_) {
+        checkForDrained();
+      }
+      */
 }
 
 void ConnPoolImpl::onStreamReset(ActiveClient& client, Http::StreamResetReason reason) {
