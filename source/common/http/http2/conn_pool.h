@@ -115,6 +115,7 @@ protected:
   std::list<ActiveClientPtr> busy_clients_;
   std::list<ActiveClientPtr> overflow_clients_;
   std::list<ActiveClientPtr> drain_clients_;
+  std::list<ActiveClientPtr> to_close_clients_;
   ActiveClientPtr primary_client_;
   ActiveClientPtr draining_client_;
   std::list<DrainedCb> drained_callbacks_;

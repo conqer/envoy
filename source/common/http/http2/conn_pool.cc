@@ -102,17 +102,17 @@ bool ConnPoolImpl::hasActiveConnections() const {
 }
 
 void ConnPoolImpl::checkForDrained() {
-  /*
-  for (auto &client:  drain_clients_) {
+  for (auto it = drain_clients_.begin(); it != drain_clients_.end();) {
+    auto splice_it = it++;
+    auto &client = *splice_it;
     if (client->client_ && client->client_->numActiveRequests() == 0) {
-      ENVOY_CONN_LOG(debug, "closing from drained list", *client->client_);
-      client->client_->close();
+      ENVOY_CONN_LOG(debug, "adding to close list", *client->client_);
+      to_close_clients_.splice(to_close_clients_.cend(), drain_clients_, splice_it);
     }
   }
-  */
 
-  while (!drain_clients_.empty()) {
-    auto& client = drain_clients_.front();
+  while (!to_close_clients_.empty()) {
+    auto& client = to_close_clients_.front();
     if (client->client_->numActiveRequests() == 0) {
       ENVOY_CONN_LOG(debug, "closing from drained list", *client->client_);
       client->client_->close();
@@ -339,7 +339,7 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
         }
         case ConnectionRequestPolicy::State::DRAIN: {
           ENVOY_CONN_LOG(debug, "client removed from drain list", *client.client_);
-          removed = client.removeFromList(drain_clients_);
+          removed = client.removeFromList(to_close_clients_);
           break;
         }
         default:
@@ -588,42 +588,47 @@ void ConnPoolImpl::onUpstreamReady() {
  
 void ConnPoolImpl::onUpstreamReady(ActiveClient& client) {
   if (pending_requests_.empty()) {
-    // There is nothing to service or delayed processing is requested, so just move the connection
-    // into the ready list.
-    ENVOY_CONN_LOG(debug, "moving to ready", *client.client_);
-    client.moveBetweenLists(busy_clients_, ready_clients_);
-    client.state_ = ConnectionRequestPolicy::State::READY;
-  } else {
-    // There is work to do immediately so bind a request to the client and move it to the busy list.
-    // Pending requests are pushed onto the front, so pull from the back.
-    ENVOY_CONN_LOG(debug, "attaching to next request", *client.client_);
-    attachRequestToClient(client, pending_requests_.back()->decoder_,
-                          pending_requests_.back()->callbacks_);
-    pending_requests_.pop_back();
-
-    const auto state = host_->cluster().connectionPolicy().onNewStream(client);
-    switch (state) {
-      case ConnectionRequestPolicy::State::OVERFLOW:
-        ENVOY_CONN_LOG(debug, "moving to overflow list after attaching request", *client.client_);
-        client.moveBetweenLists(busy_clients_, overflow_clients_);
-        break;
-      case ConnectionRequestPolicy::State::DRAIN:
-        ENVOY_CONN_LOG(debug, "moving to drain list after attaching request", *client.client_);
-        client.moveBetweenLists(busy_clients_, drain_clients_);
-        break;
-      default:
-        ASSERT(false);
+    if (client.state_ == ConnectionRequestPolicy::State::ACTIVE) {
+      // There is nothing to service or delayed processing is requested, so just move the connection
+      // into the ready list.
+      ENVOY_CONN_LOG(debug, "moving to ready", *client.client_);
+      client.moveBetweenLists(busy_clients_, ready_clients_);
+      client.state_ = ConnectionRequestPolicy::State::READY;
     }
+  } else {
+    if (client.state_ == ConnectionRequestPolicy::State::ACTIVE) {
 
-    client.state_ = state;
+      // There is work to do immediately so bind a request to the client and move it to the busy list.
+      // Pending requests are pushed onto the front, so pull from the back.
+      ENVOY_CONN_LOG(debug, "attaching to next request", *client.client_);
+      attachRequestToClient(client, pending_requests_.back()->decoder_,
+                            pending_requests_.back()->callbacks_);
+      pending_requests_.pop_back();
 
+      const auto state = host_->cluster().connectionPolicy().onNewStream(client);
+      switch (state) {
+        case ConnectionRequestPolicy::State::OVERFLOW:
+          ENVOY_CONN_LOG(debug, "moving to overflow list after attaching request", *client.client_);
+          client.moveBetweenLists(busy_clients_, overflow_clients_);
+          break;
+        case ConnectionRequestPolicy::State::DRAIN:
+          ENVOY_CONN_LOG(debug, "moving to drain list after attaching request", *client.client_);
+          client.moveBetweenLists(busy_clients_, drain_clients_);
+          break;
+        default:
+          ASSERT(false);
+      }
+
+      client.state_ = state;
+
+    }
   }
-/*
+
   if (ready_clients_.empty() && busy_clients_.empty()) {
     ENVOY_LOG(debug, "creating new connection as no exiting ready or busy clients");
     createNewConnection();
   }
-  */
+
   ENVOY_LOG(debug, "handled onUpsreamReady");
   //checkForDrained();
 }
