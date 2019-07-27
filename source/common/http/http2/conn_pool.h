@@ -52,6 +52,7 @@ protected:
     ~ActiveClient();
 
     void onConnectTimeout() { parent_.onConnectTimeout(*this); }
+    void onIdleTimeout() { parent_.onIdleTimeout(*this); }
 
     // Network::ConnectionCallbacks
     void onEvent(Network::ConnectionEvent event) override {
@@ -79,6 +80,7 @@ protected:
     Upstream::HostDescriptionConstSharedPtr real_host_description_;
     uint64_t total_streams_{};
     Event::TimerPtr connect_timer_;
+    Event::TimerPtr idle_timer_;
     bool upstream_ready_{};
     Stats::TimespanPtr conn_length_;
     bool closed_with_active_rq_{};
@@ -97,6 +99,7 @@ protected:
   */
   void onConnectionEvent(ActiveClient& client, Network::ConnectionEvent event);
   void onConnectTimeout(ActiveClient& client);
+  void onIdleTimeout(ActiveClient& client);
   void onGoAway(ActiveClient& client);
   void onStreamDestroy(ActiveClient& client);
   void onStreamReset(ActiveClient& client, Http::StreamResetReason reason);

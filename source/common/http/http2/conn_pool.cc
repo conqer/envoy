@@ -21,10 +21,7 @@ ConnPoolImpl::ConnPoolImpl(Event::Dispatcher& dispatcher, Upstream::HostConstSha
                            Upstream::ResourcePriority priority,
                            const Network::ConnectionSocket::OptionsSharedPtr& options)
     : ConnPoolImplBase(std::move(host), std::move(priority)), dispatcher_(dispatcher),
-      socket_options_(options) {
-  ENVOY_LOG(debug, "#########################################");
-        std::cout << "CReating http2 conn pool" << std::endl;
-      }
+      socket_options_(options) {}
 
 void ConnPoolImpl::applyToEachClient(std::list<ActiveClientPtr>& client_list,
                               const std::function<void(const ActiveClientPtr&)>& fn) {
@@ -32,6 +29,8 @@ void ConnPoolImpl::applyToEachClient(std::list<ActiveClientPtr>& client_list,
 }
 
 ConnPoolImpl::~ConnPoolImpl() {
+  drainConnections();
+/*
   applyToEachClient(ready_clients_,
                     [](const ActiveClientPtr& client) { client->client_->close(); });
 
@@ -43,19 +42,20 @@ ConnPoolImpl::~ConnPoolImpl() {
 
   applyToEachClient(drain_clients_,
                     [](const ActiveClientPtr& client) { client->client_->close(); });
-
+*/
   // Make sure all clients are destroyed before we are destroyed.
   dispatcher_.clearDeferredDeleteList();
 }
 
 void ConnPoolImpl::ConnPoolImpl::drainConnections() {
-  applyToEachClient(ready_clients_,
-                    [](const ActiveClientPtr& client) { client->client_->close(); });
+  applyToEachClient(connecting_clients_, [this](const ActiveClientPtr& client) {
+    client->state_ = ConnectionRequestPolicy::State::DRAIN;
+    client->moveBetweenLists(connecting_clients_, drain_clients_);
+  });
 
-  applyToEachClient(drain_clients_, [](const ActiveClientPtr& client) {
-    if (client->client_->numActiveRequests() == 0) {
-      client->client_->close();
-    }
+  applyToEachClient(ready_clients_, [this](const ActiveClientPtr& client) {
+    client->state_ = ConnectionRequestPolicy::State::DRAIN;
+    client->moveBetweenLists(ready_clients_, drain_clients_);
   });
 
   applyToEachClient(overflow_clients_, [this](const ActiveClientPtr& client) {
@@ -103,11 +103,10 @@ bool ConnPoolImpl::hasActiveConnections() const {
 
 void ConnPoolImpl::checkForDrained() {
   for (auto it = drain_clients_.begin(); it != drain_clients_.end();) {
-    auto splice_it = it++;
-    auto &client = *splice_it;
+    auto &client = *it++;
     if (client->client_ && client->client_->numActiveRequests() == 0) {
       ENVOY_CONN_LOG(debug, "adding to close list", *client->client_);
-      to_close_clients_.splice(to_close_clients_.cend(), drain_clients_, splice_it);
+      client->moveBetweenLists(drain_clients_, to_close_clients_);
     }
   }
 
@@ -236,6 +235,11 @@ void ConnPoolImpl::attachRequestToClient(ConnPoolImpl::ActiveClient& client, Str
                                          ConnectionPool::Callbacks& callbacks) {
   ENVOY_LOG(debug, "attaching request to connection");
 	client.total_streams_++;
+  if (client.state_ == ConnectionRequestPolicy::State::READY) {
+    client.idle_timer_->disableTimer();
+    client.idle_timer_.reset();
+  }
+
   host_->stats().rq_total_.inc();
   host_->stats().rq_active_.inc();
   host_->cluster().stats().upstream_rq_total_.inc();
@@ -332,7 +336,7 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
     ActiveClientPtr removed;
     bool check_for_drained = true;
 
-    if ((!client.connect_timer_) && (client.state_ != ConnectionRequestPolicy::State::READY)) {
+    if (!client.connect_timer_) {
       // if not in ready list
       switch(client.state_){
         case ConnectionRequestPolicy::State::OVERFLOW: {
@@ -342,6 +346,11 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
         case ConnectionRequestPolicy::State::DRAIN: {
           ENVOY_CONN_LOG(debug, "client removed from drain list", *client.client_);
           removed = client.removeFromList(to_close_clients_);
+          break;
+        }
+        case ConnectionRequestPolicy::State::ACTIVE: {
+          ENVOY_CONN_LOG(debug, "client removed from ready list", *client.client_);
+          removed = client.removeFromList(ready_clients_);
           break;
         }
         default:
@@ -354,7 +363,8 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
       host_->cluster().stats().upstream_cx_connect_fail_.inc();
       host_->stats().cx_connect_fail_.inc();
 
-      removed = client.removeFromList(ready_clients_);
+      ENVOY_CONN_LOG(debug, "client removed from connecting list", *client.client_);
+      removed = client.removeFromList(connecting_clients_);
       check_for_drained = false;
 
       // Raw connect failures should never happen under normal circumstances. If we have an upstream
@@ -439,6 +449,13 @@ void ConnPoolImpl::movePrimaryClientToDraining() {
   ASSERT(!primary_client_);
 }
 */
+void ConnPoolImpl::onIdleTimeout(ActiveClient& client) {
+  ENVOY_CONN_LOG(debug, "idle timeout", *client.client_);
+  client.moveBetweenLists(ready_clients_, drain_clients_);
+  client.state_ = ConnectionRequestPolicy::State::DRAIN;
+  checkForDrained();
+}
+
 void ConnPoolImpl::onConnectTimeout(ActiveClient& client) {
   ENVOY_CONN_LOG(debug, "connect timeout", *client.client_);
   host_->cluster().stats().upstream_cx_connect_timeout_.inc();
@@ -609,6 +626,7 @@ void ConnPoolImpl::onUpstreamReady(ActiveClient& client) {
       ENVOY_CONN_LOG(debug, "moving to ready", *client.client_);
       client.moveBetweenLists(connecting_clients_, ready_clients_);
       client.state_ = ConnectionRequestPolicy::State::READY;
+      client.idle_timer_->enableTimer(std::chrono::milliseconds(500));
     }
   } else {
     if (client.state_ == ConnectionRequestPolicy::State::INIT) {
@@ -652,7 +670,8 @@ void ConnPoolImpl::onUpstreamReady(ActiveClient& client) {
 
 ConnPoolImpl::ActiveClient::ActiveClient(ConnPoolImpl& parent)
     : parent_(parent),
-      connect_timer_(parent_.dispatcher_.createTimer([this]() -> void { onConnectTimeout(); })) {
+      connect_timer_(parent_.dispatcher_.createTimer([this]() -> void { onConnectTimeout(); })),
+      idle_timer_(parent_.dispatcher_.createTimer([this]() -> void { onIdleTimeout(); })) {
   parent_.conn_connect_ms_ = std::make_unique<Stats::Timespan>(
       parent_.host_->cluster().stats().upstream_cx_connect_ms_, parent_.dispatcher_.timeSource());
   Upstream::Host::CreateConnectionData data =
