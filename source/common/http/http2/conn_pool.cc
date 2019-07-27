@@ -82,10 +82,8 @@ void ConnPoolImpl::checkForDrained() {
 
   while (!to_close_clients_.empty()) {
     auto& client = to_close_clients_.front();
-    if (client->client_->numActiveRequests() == 0) {
-      ENVOY_CONN_LOG(debug, "closing from drained list", *client->client_);
-      client->client_->close();
-    }
+    ENVOY_CONN_LOG(debug, "closing from drained list", *client->client_);
+    client->client_->close();
   }
 
   if (!drained_callbacks_.empty() && pending_requests_.empty() && busy_clients_.empty() &&
@@ -104,8 +102,9 @@ void ConnPoolImpl::checkForDrained() {
 
 void ConnPoolImpl::attachRequestToClient(ConnPoolImpl::ActiveClient& client, StreamDecoder& response_decoder,
                                          ConnectionPool::Callbacks& callbacks) {
-  ENVOY_LOG(debug, "attaching request to connection");
+  ENVOY_CONN_LOG(debug, "attaching request to connection", *client.client_);
 	client.total_streams_++;
+
   if (client.state_ == ConnectionRequestPolicy::State::READY) {
     client.idle_timer_->disableTimer();
     client.idle_timer_.reset();
@@ -277,6 +276,7 @@ void ConnPoolImpl::onIdleTimeout(ActiveClient& client) {
 void ConnPoolImpl::onConnectTimeout(ActiveClient& client) {
   ENVOY_CONN_LOG(debug, "connect timeout", *client.client_);
   host_->cluster().stats().upstream_cx_connect_timeout_.inc();
+
   if (client.state_ ==  ConnectionRequestPolicy::State::ACTIVE) {
     client.moveBetweenLists(busy_clients_, drain_clients_);
   }
@@ -357,6 +357,8 @@ void ConnPoolImpl::onStreamDestroy(ActiveClient& client) {
       ASSERT(false);
       break;
   }
+
+  client.state_ = state;
 
   if (check_drained) {
     checkForDrained();
