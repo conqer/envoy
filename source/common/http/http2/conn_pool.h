@@ -111,6 +111,7 @@ protected:
                          const std::function<void(const ActiveClientPtr&)>& fn);
   Stats::TimespanPtr conn_connect_ms_;
   Event::Dispatcher& dispatcher_;
+  std::list<ActiveClientPtr> connecting_clients_;
   std::list<ActiveClientPtr> ready_clients_;
   std::list<ActiveClientPtr> busy_clients_;
   std::list<ActiveClientPtr> overflow_clients_;

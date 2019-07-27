@@ -121,6 +121,8 @@ void ConnPoolImpl::checkForDrained() {
 
   if (!drained_callbacks_.empty() && pending_requests_.empty() && busy_clients_.empty() &&
       overflow_clients_.empty()) {
+    ENVOY_LOG(debug, "draining ready clients");
+
     while (!ready_clients_.empty()) {
       ready_clients_.front()->client_->close();
     }
@@ -246,9 +248,9 @@ void ConnPoolImpl::attachRequestToClient(ConnPoolImpl::ActiveClient& client, Str
 void ConnPoolImpl::createNewConnection() {
   ENVOY_LOG(debug, "creating a new connection");
   ActiveClientPtr client(new ActiveClient(*this));
-  client->state_ = ConnectionRequestPolicy::State::ACTIVE;
-  ENVOY_CONN_LOG(debug, "Moving new connection to busy_list", *client->client_);
-  client->moveIntoList(std::move(client), busy_clients_);
+  client->state_ = ConnectionRequestPolicy::State::INIT;
+  ENVOY_CONN_LOG(debug, "Moving new connection to connecting_clients list", *client->client_);
+  client->moveIntoList(std::move(client), connecting_clients_);
 }
 
 ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& response_decoder,
@@ -330,7 +332,7 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
     ActiveClientPtr removed;
     bool check_for_drained = true;
 
-    if (!client.connect_timer_) {
+    if ((!client.connect_timer_) && (client.state_ != ConnectionRequestPolicy::State::READY)) {
       // if not in ready list
       switch(client.state_){
         case ConnectionRequestPolicy::State::OVERFLOW: {
@@ -343,6 +345,7 @@ void ConnPoolImpl::onConnectionEvent(ActiveClient& client, Network::ConnectionEv
           break;
         }
         default:
+          ENVOY_CONN_LOG(debug, "client removed from busy list", *client.client_);
           removed = client.removeFromList(busy_clients_);
           break;
       }
@@ -439,7 +442,19 @@ void ConnPoolImpl::movePrimaryClientToDraining() {
 void ConnPoolImpl::onConnectTimeout(ActiveClient& client) {
   ENVOY_CONN_LOG(debug, "connect timeout", *client.client_);
   host_->cluster().stats().upstream_cx_connect_timeout_.inc();
-  client.client_->close();
+  if (client.state_ ==  ConnectionRequestPolicy::State::ACTIVE) {
+    client.moveBetweenLists(busy_clients_, drain_clients_);
+  }
+  if (client.state_ ==  ConnectionRequestPolicy::State::INIT) {
+    client.moveBetweenLists(connecting_clients_, drain_clients_);
+  }
+
+  client.state_ = ConnectionRequestPolicy::State::DRAIN;
+
+  client.connect_timer_->disableTimer();
+  client.connect_timer_.reset();
+
+  checkForDrained();
 }
 
 void ConnPoolImpl::onGoAway(ActiveClient& client) {
@@ -588,15 +603,17 @@ void ConnPoolImpl::onUpstreamReady() {
  
 void ConnPoolImpl::onUpstreamReady(ActiveClient& client) {
   if (pending_requests_.empty()) {
-    if (client.state_ == ConnectionRequestPolicy::State::ACTIVE) {
+    if (client.state_ == ConnectionRequestPolicy::State::INIT) {
       // There is nothing to service or delayed processing is requested, so just move the connection
       // into the ready list.
       ENVOY_CONN_LOG(debug, "moving to ready", *client.client_);
-      client.moveBetweenLists(busy_clients_, ready_clients_);
+      client.moveBetweenLists(connecting_clients_, ready_clients_);
       client.state_ = ConnectionRequestPolicy::State::READY;
     }
   } else {
-    if (client.state_ == ConnectionRequestPolicy::State::ACTIVE) {
+    if (client.state_ == ConnectionRequestPolicy::State::INIT) {
+      client.moveBetweenLists(connecting_clients_, busy_clients_);
+      client.state_ = ConnectionRequestPolicy::State::ACTIVE;
 
       // There is work to do immediately so bind a request to the client and move it to the busy list.
       // Pending requests are pushed onto the front, so pull from the back.
@@ -624,7 +641,7 @@ void ConnPoolImpl::onUpstreamReady(ActiveClient& client) {
     }
   }
 
-  if (ready_clients_.empty() && busy_clients_.empty()) {
+  if (ready_clients_.empty() && busy_clients_.empty() && connecting_clients_.empty()) {
     ENVOY_LOG(debug, "creating new connection as no exiting ready or busy clients");
     createNewConnection();
   }
