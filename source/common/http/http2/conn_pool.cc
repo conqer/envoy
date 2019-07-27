@@ -253,6 +253,7 @@ void ConnPoolImpl::createNewConnection() {
 
 ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& response_decoder,
                                                      ConnectionPool::Callbacks& callbacks) {
+  ENVOY_LOG(debug, "new stream");
   std::list<ActiveClientPtr> *client_list = nullptr;
 
   if (!busy_clients_.empty()) {
@@ -286,7 +287,12 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
     }
 
     client->state_ = state;
-
+/*
+    if (ready_clients_.empty()) {
+      ENVOY_LOG(debug, "creating new connection as no exiting ready or busy clients");
+      createNewConnection();
+    }
+*/
     return nullptr;
   }
 
@@ -300,6 +306,7 @@ ConnectionPool::Cancellable* ConnPoolImpl::newStream(Http::StreamDecoder& respon
 
   // If we have no connections at all, make one no matter what so we don't starve.
   if ((ready_clients_.empty() && busy_clients_.empty())) {
+    ENVOY_LOG(debug, "no ready or busy clients available for new stream");
     createNewConnection();
   }
 
@@ -609,8 +616,15 @@ void ConnPoolImpl::onUpstreamReady(ActiveClient& client) {
     }
 
     client.state_ = state;
-  }
 
+  }
+/*
+  if (ready_clients_.empty() && busy_clients_.empty()) {
+    ENVOY_LOG(debug, "creating new connection as no exiting ready or busy clients");
+    createNewConnection();
+  }
+  */
+  ENVOY_LOG(debug, "handled onUpsreamReady");
   //checkForDrained();
 }
 
