@@ -27,9 +27,7 @@ ConnPoolImpl::ConnPoolImpl(Event::Dispatcher& dispatcher, Upstream::HostConstSha
                            const Network::ConnectionSocket::OptionsSharedPtr& options)
     : ConnPoolImplBase(std::move(host), std::move(priority)), dispatcher_(dispatcher),
       socket_options_(options),
-      upstream_ready_timer_(dispatcher_.createTimer([this]() { onUpstreamReady(); })) {
-  ENVOY_LOG(debug, "#########################################");
-      }
+      upstream_ready_timer_(dispatcher_.createTimer([this]() { onUpstreamReady(); })) {}
 
 ConnPoolImpl::~ConnPoolImpl() {
   while (!ready_clients_.empty()) {

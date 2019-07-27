@@ -58,13 +58,7 @@ private:
     ~ResourceImpl() { ASSERT(current_ == 0); }
 
     // Upstream::Resource
-    bool canCreate() override {
-      /*   ENVOY_LOG(info, "current: ", current_);*/ 
-      auto m = max();
-      if (current_ >= m)
-        std::cout << "circuit breaker !!!!!! for " <<  runtime_key_ << "  current: " << current_ << ", max: " << m << ", returning : " << (current_ < m)  << std::endl; 
-      return (current_ < m); 
-    }
+    bool canCreate() override { return current_ < max(); }
     void inc() override {
       current_++;
       updateRemaining();
@@ -77,21 +71,7 @@ private:
       updateRemaining();
       open_gauge_.set(canCreate() ? 0 : 1);
     }
-    uint64_t max() override {
- //     std::cout << "runtime_key: " << runtime_key_ << ", max: " << max_ <<std::endl;  
-      /*
-      if (runtime_key_ == "circuit_breakers.sp-d23-tts-router.default.max_pending_requests") {
-        std::cout << "value " << runtime_.snapshot().getInteger(runtime_key_, max_) << std::endl;
-        return 1; 
-      }
-      if (runtime_key_ == "circuit_breakers.sp-d23-tts-router.default.max_requests") {
-        std::cout << "value " << runtime_.snapshot().getInteger(runtime_key_, max_) << std::endl;
-        return 1; 
-
-      }
-      */
-      return runtime_.snapshot().getInteger(runtime_key_, max_);
-    }
+    uint64_t max() override { return runtime_.snapshot().getInteger(runtime_key_, max_); }
 
     /**
      * We set the gauge instead of incrementing and decrementing because,
